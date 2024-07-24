@@ -94,6 +94,37 @@ class MultiHeadAttention(nn.Module):
         
     def forward(self, x):
         return torch.cat([h(x) for h in self.heads], dim=-1)
+    
+
+class FeedForward(nn.Module):
+    """a simple linear layer followed by a ReLU"""
+
+    def __init__(self, n_embed):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(n_embed, n_embed),
+            nn.ReLU(),
+        )
+
+    def forward(self, x):
+        return self.net(x)
+    
+
+class Block(nn.Module):
+    """Transformer block: communication followed by computation."""
+
+    def __init__(self, n_embed, n_head):
+        # n_embed: embedding dimension, n_head: the number of heads we'd like
+        super().__init__()
+        head_size = n_embed // n_head
+        self.sa = MultiHeadAttention(n_head, head_size)
+        self.ffwd = FeedForward(n_embed)
+
+    def forward(self, x):
+        x = self.sa(x)
+        x = self.ffwd(x)
+        return x
+        
 
 class BigramLanguageModel(nn.Module):
 
@@ -101,7 +132,11 @@ class BigramLanguageModel(nn.Module):
         super().__init__()
         self.token_embedding_table = nn.Embedding(vocab_size, n_embed)
         self.position_embedding_table = nn.Embedding(block_size, n_embed)
-        self.sa_heads = MultiHeadAttention(4, n_embed // 4)
+        self.blocks = nn.Sequential(
+            Block(n_embed, n_head=4),
+            Block(n_embed, n_head=4),
+            Block(n_embed, n_head=4),
+        )
         self.lm_head = nn.Linear(n_embed, vocab_size)
 
     def forward(self, idx, targets=None):
@@ -110,7 +145,7 @@ class BigramLanguageModel(nn.Module):
         tok_embed = self.token_embedding_table(idx)  # (B, T, C)
         pos_embed = self.position_embedding_table(torch.arange(T, device=device))  # (T, C)
         x = tok_embed + pos_embed  # (B, T, C)
-        x = self.sa_heads(x)  # (B, T, C)
+        x = self.blocks(x)  # (B, T, C)
         logits = self.lm_head(x)  # (B, T, V)
 
         if targets is None:
@@ -154,4 +189,4 @@ for iter in range(max_iters):
 
 # generate from the model
 context = torch.zeros([1, block_size], dtype=torch.long).to(device)
-print(decode(m.generate(context, max_new_tokens=500)[0].tolist()))
+print(decode(m.generate(context, max_new_tokens=1000)[0].tolist()))
