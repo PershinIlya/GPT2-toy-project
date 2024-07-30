@@ -2,18 +2,19 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
+import matplotlib.pyplot as plt
 
 # hyperparameters
 batch_size = 64
-block_size = 50
+block_size = 30
 max_iters = 5000
 eval_interval = 500
 learning_rate = 3e-4
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 eval_iters = 200
-n_embed = 60
-n_head = 6
-n_layer = 6
+n_embed = 40
+n_head = 4
+n_layer = 3
 dropout = 0.2
 # --------------------------------
 
@@ -73,7 +74,6 @@ class Head(nn.Module):
         self.query = nn.Linear(n_embed, head_size, bias=False)
         self.value = nn.Linear(n_embed, head_size, bias=False)
         self.register_buffer('tril', torch.tril(torch.ones(block_size, block_size)))
-
         self.dropout = nn.Dropout(dropout)
                              
     def forward(self, x):   
