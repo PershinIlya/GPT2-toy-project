@@ -1,8 +1,8 @@
+import math
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
-import matplotlib.pyplot as plt
 
 # hyperparameters
 batch_size = 64
@@ -94,15 +94,41 @@ class Head(nn.Module):
 class MultiHeadAttention(nn.Module):
     """Multi-head self-attention layer."""
 
-    def __init__(self, num_heads, head_size):
+    # def __init__(self, num_heads, head_size):
+    #     super().__init__()
+    #     self.heads = nn.ModuleList([Head(head_size) for _ in range(num_heads)])
+    #     self.proj = nn.Linear(n_embed, n_embed)
+    #     self.dropout = nn.Dropout(dropout)
+    
+    # def forward(self, x):
+    #     out = torch.cat([h(x) for h in self.heads], dim=-1)
+    #     out = self.dropout(self.proj(out))
+    #     return out
+    
+    def __init__(self, n_embed):
         super().__init__()
-        self.heads = nn.ModuleList([Head(head_size) for _ in range(num_heads)])
+        self.attn = nn.Linear(n_embed, 3 * n_embed)
         self.proj = nn.Linear(n_embed, n_embed)
-        self.dropout = nn.Dropout(dropout)
-        
+        self.attn_dropout = nn.Dropout(dropout)
+        self.resid_dropout = nn.Dropout(dropout)
+        self.register_buffer('tril', torch.tril(torch.ones(block_size, block_size)))
+
     def forward(self, x):
-        out = torch.cat([h(x) for h in self.heads], dim=-1)
-        out = self.dropout(self.proj(out))
+        B, T, C = x.shape
+        # calculate query, key, values for all heads in batch and move head forward to be the batch dim
+        q, k, v = self.attn(x).split(n_embed, dim=2)
+        k = k.view(B, T, n_head, C // n_head).transpose(1, 2)  # (B, nh, T, hs)
+        q = q.view(B, T, n_head, C // n_head).transpose(1, 2)  # (B, nh, T, hs)
+        v = v.view(B, T, n_head, C // n_head).transpose(1, 2)  # (B, nh, T, hs)
+        # Self-attend: (B, nh, T, hs) x (B, nh, hs, T) -> (B, nh, T, T)
+        att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))  # (B, nh, T, T)
+        att = att.masked_fill(self.tril == 0, float('-inf'))
+        att = F.softmax(att, dim=-1)
+        att = self.attn_dropout(att)
+        y = att @ v  # (B, nh, T, hs)
+        y = y.transpose(1, 2).contiguous().view(B, T, C)  # (B, T, C)
+        # output projection
+        out = self.resid_dropout(self.proj(y))
         return out
     
 
@@ -128,8 +154,9 @@ class Block(nn.Module):
     def __init__(self, n_embed, n_head):
         # n_embed: embedding dimension, n_head: the number of heads we'd like
         super().__init__()
-        head_size = n_embed // n_head
-        self.sa = MultiHeadAttention(n_head, head_size)
+        # head_size = n_embed // n_head
+        # self.sa = MultiHeadAttention(n_head, head_size)
+        self.sa = MultiHeadAttention(n_embed)
         self.ffwd = FeedForward(n_embed)
         self.ln1 = nn.LayerNorm(n_embed)
         self.ln2 = nn.LayerNorm(n_embed)
